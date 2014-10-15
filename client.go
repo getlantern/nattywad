@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/getlantern/go-natty/natty"
-	log "github.com/getlantern/golog"
 	"github.com/getlantern/waddell"
 )
 

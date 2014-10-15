@@ -7,13 +7,21 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/getlantern/golog"
+	"github.com/getlantern/golog"
 	"github.com/getlantern/waddell"
 )
 
 const (
 	ServerReady = "ServerReady"
 	Timeout     = 30 * time.Second
+)
+
+var (
+	log = golog.LoggerFor("nattywad")
+
+	maxWaddellMessageSize = 4096 + waddell.WADDELL_OVERHEAD
+
+	endianness = binary.LittleEndian
 )
 
 // FiveTupleCallbackClient is a function that gets invoked when a client NAT
@@ -29,12 +37,6 @@ type FiveTupleCallbackClient func(local *net.UDPAddr, remote *net.UDPAddr)
 // the other side of the NAT traversal actually get a five tuple through its
 // own callback.
 type FiveTupleCallbackServer func(local *net.UDPAddr, remote *net.UDPAddr) bool
-
-var (
-	maxWaddellMessageSize = 4096 + waddell.WADDELL_OVERHEAD
-
-	endianness = binary.LittleEndian
-)
 
 type message []byte
 
@@ -69,13 +71,12 @@ func newWaddellConn(dial func() (net.Conn, error)) (wc *waddellConn, err error) 
 	wc = &waddellConn{
 		dial: dial,
 	}
-	log.Debug("Connecting")
 	err = wc.connect()
-	log.Debug("Connected")
 	return
 }
 
 func (wc *waddellConn) send(peerId waddell.PeerId, sessionId uint32, msgOut string) (err error) {
+	log.Tracef("Sending message %s to peer %s in session %d", msgOut, peerId, sessionId)
 	client, dialErr := wc.getClient()
 	if dialErr != nil {
 		err = dialErr
@@ -89,6 +90,7 @@ func (wc *waddellConn) send(peerId waddell.PeerId, sessionId uint32, msgOut stri
 }
 
 func (wc *waddellConn) receive() (msg message, from waddell.PeerId, err error) {
+	log.Trace("Receiving")
 	client, dialErr := wc.getClient()
 	if dialErr != nil {
 		err = dialErr
@@ -99,9 +101,12 @@ func (wc *waddellConn) receive() (msg message, from waddell.PeerId, err error) {
 	wm, err = wc.client.Receive(b)
 	if err != nil {
 		wc.connError(client, err)
+		log.Tracef("Error receiving: %s", err)
+		return
 	}
 	from = wm.From
 	msg = message(wm.Body)
+	log.Tracef("Received %s from %s", msg.getData(), from)
 	return
 }
 
@@ -113,9 +118,11 @@ func (wc *waddellConn) getClient() (*waddell.Client, error) {
 
 func (wc *waddellConn) connError(client *waddell.Client, err error) {
 	wc.connMutex.Lock()
+	log.Tracef("Error on waddell connection: %s", err)
 	if client == wc.client {
 		// The current client is in error, redial
 		go func() {
+			log.Tracef("Redialing waddell")
 			wc.dialErr = wc.connect()
 			wc.connMutex.Unlock()
 		}()
@@ -125,6 +132,7 @@ func (wc *waddellConn) connError(client *waddell.Client, err error) {
 }
 
 func (wc *waddellConn) connect() (err error) {
+	log.Trace("Connecting to waddell")
 	wc.conn, err = wc.dial()
 	if err != nil {
 		return
