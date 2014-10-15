@@ -83,12 +83,10 @@ func (c *Client) Configure(serverPeers []*ServerPeer) {
 }
 
 func (c *Client) offer(waddellAddr string, peerId waddell.PeerId) {
-	log.Debugf("Making offer to %s at %s", peerId, waddellAddr)
 	wc := c.waddellConns[waddellAddr]
 	if wc == nil {
 		/* new waddell server--open connection to it */
 		var err error
-		log.Debugf("Connecting to waddell")
 		wc, err = newWaddellConn(func() (net.Conn, error) {
 			return c.DialWaddell(waddellAddr)
 		})
@@ -99,8 +97,6 @@ func (c *Client) offer(waddellAddr string, peerId waddell.PeerId) {
 		c.waddellConns[waddellAddr] = wc
 		go c.receiveMessages(wc)
 	}
-
-	log.Debugf("Connected to waddell")
 
 	w := &clientWorker{
 		wc:          wc,
