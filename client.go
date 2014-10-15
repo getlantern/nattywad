@@ -10,10 +10,6 @@ import (
 	"github.com/getlantern/waddell"
 )
 
-const (
-	NumUDPTestPackets = 10
-)
-
 // ServerPeer identifies a server for NAT traversal
 type ServerPeer struct {
 	ID          string
@@ -111,7 +107,7 @@ func (c *Client) offer(waddellAddr string, peerId waddell.PeerId) {
 		peerId:      peerId,
 		onFiveTuple: c.OnFiveTuple,
 		traversalId: uint32(rand.Int31()),
-		serverReady: make(chan bool, NumUDPTestPackets),
+		serverReady: make(chan bool, 10), // make this buffered to prevent deadlocks
 	}
 	c.addWorker(w)
 	go w.run()
