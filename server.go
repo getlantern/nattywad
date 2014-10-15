@@ -12,7 +12,7 @@ import (
 
 // Server is a server that answers NAT traversal requests received via waddell.
 // When a NAT traversal results in a 5-tuple, the OnFiveTuple callback is
-// called in its own goroutine.
+// called.
 type Server struct {
 	// OnFiveTuple: a callback that's invoked once a five tuple has been
 	// obtained. Must be specified in order for Server to work.
