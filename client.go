@@ -26,7 +26,7 @@ func (p *ServerPeer) String() string {
 
 // Client is a client that initiates NAT traversals to one or more configured
 // servers. When a NAT traversal results in a 5-tuple, the OnFiveTuple callback
-// is called in its own goroutine.
+// is called.
 type Client struct {
 	// DialWaddell: a function that dials the waddell server at the given
 	// address. Must be specified in order for Client to work.

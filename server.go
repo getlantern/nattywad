@@ -15,7 +15,7 @@ import (
 // called in its own goroutine.
 type Server struct {
 	// OnFiveTuple: a callback that's invoked once a five tuple has been
-	// obtained. Must be specified in order for Client to work.
+	// obtained. Must be specified in order for Server to work.
 	OnFiveTuple FiveTupleCallbackServer
 
 	waddellAddr string
