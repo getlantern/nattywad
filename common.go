@@ -24,20 +24,6 @@ var (
 	endianness = binary.LittleEndian
 )
 
-// FiveTupleCallbackClient is a function that gets invoked when a client NAT
-// traversal results in a UDP five tuple.
-type FiveTupleCallbackClient func(local *net.UDPAddr, remote *net.UDPAddr)
-
-// FiveTupleCallbackServer is a function that gets invoked when a server NAT
-// traversal results in a UDP five tuple. The function allows the consumer of
-// nattywad to bind to the provided local and remote addresses and start
-// whatever processing it needs to. FiveTupleCallback should return true to
-// indicate that the server is bound and ready, which will cause nattywad to
-// emit a ServerReady message. Only once this has happened will the client on
-// the other side of the NAT traversal actually get a five tuple through its
-// own callback.
-type FiveTupleCallbackServer func(local *net.UDPAddr, remote *net.UDPAddr) bool
-
 type message []byte
 
 func (msg message) setTraversalId(id uint32) {

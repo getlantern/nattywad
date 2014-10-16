@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/getlantern/go-natty/natty"
 	"github.com/getlantern/waddell"
@@ -11,8 +12,15 @@ import (
 
 // ServerPeer identifies a server for NAT traversal
 type ServerPeer struct {
-	ID          string
+	// ID: the server's PeerID on waddell (type 4 GUID)
+	ID string
+
+	// WaddellAddr: the address of the waddell server on which the server is
+	// listening for offers.
 	WaddellAddr string
+
+	// Extras: Extra information about the peer (pass-through)
+	Extras map[string]interface{}
 }
 
 func (p *ServerPeer) CompositeID() string {
@@ -23,6 +31,37 @@ func (p *ServerPeer) String() string {
 	return p.CompositeID()
 }
 
+// SuccessCallbackClient is a function that gets invoked when a client NAT
+// traversal results in a UDP five tuple.
+type SuccessCallbackClient func(info *TraversalInfo)
+
+// FailureCallbackClient is a callback that is invoked if a client NAT traversal
+// fails.
+type FailureCallbackClient func(info *TraversalInfo)
+
+// TraversalInfo provides information about failed traversals
+type TraversalInfo struct {
+	Peer *ServerPeer
+	// ServerRespondedToSignaling: indicates whether nattywad received any
+	// signaling messages from the server peer during the traversal.
+	ServerRespondedToSignaling bool
+
+	// ServerGotFiveTuple: indicates whether or not the server peer got a
+	// FiveTuple of its own (only populated when using nattywad as a client)
+	ServerGotFiveTuple bool
+
+	// LocalAddr: on a successful traversal, this contains the local UDP addr of
+	// the FiveTuple.
+	LocalAddr *net.UDPAddr
+
+	// RemoteAddr: on a successful traversal, this contains the remote UDP addr
+	// of the FiveTuple.
+	RemoteAddr *net.UDPAddr
+
+	// Duration: the duration of the traversal
+	Duration time.Duration
+}
+
 // Client is a client that initiates NAT traversals to one or more configured
 // servers. When a NAT traversal results in a 5-tuple, the OnFiveTuple callback
 // is called.
@@ -31,9 +70,13 @@ type Client struct {
 	// address. Must be specified in order for Client to work.
 	DialWaddell func(addr string) (net.Conn, error)
 
-	// OnFiveTuple: a callback that's invoked once a five tuple has been
+	// OnSuccess: a callback that's invoked once a five tuple has been
 	// obtained. Must be specified in order for Client to work.
-	OnFiveTuple FiveTupleCallbackClient
+	OnSuccess SuccessCallbackClient
+
+	// OnFailure: a callback that's invoked if the NAT traversal fails
+	// (e.g. times out). If unpopulated, failures aren't reported.
+	OnFailure FailureCallbackClient
 
 	serverPeers  map[string]*ServerPeer
 	workers      map[uint32]*clientWorker
@@ -73,7 +116,7 @@ func (c *Client) Configure(serverPeers []*ServerPeer) {
 					peer.ID, err)
 				continue
 			}
-			c.offer(peer.WaddellAddr, peerId)
+			c.offer(peer, peerId)
 		}
 
 		// Keep track of new peer
@@ -81,27 +124,29 @@ func (c *Client) Configure(serverPeers []*ServerPeer) {
 	}
 }
 
-func (c *Client) offer(waddellAddr string, peerId waddell.PeerId) {
-	wc := c.waddellConns[waddellAddr]
+func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
+	wc := c.waddellConns[serverPeer.WaddellAddr]
 	if wc == nil {
 		/* new waddell server--open connection to it */
 		var err error
 		wc, err = newWaddellConn(func() (net.Conn, error) {
-			return c.DialWaddell(waddellAddr)
+			return c.DialWaddell(serverPeer.WaddellAddr)
 		})
 		if err != nil {
 			log.Errorf("Unable to connect to waddell: %s", err)
 			return
 		}
-		c.waddellConns[waddellAddr] = wc
+		c.waddellConns[serverPeer.WaddellAddr] = wc
 		go c.receiveMessages(wc)
 	}
 
 	w := &clientWorker{
 		wc:          wc,
 		peerId:      peerId,
-		onFiveTuple: c.OnFiveTuple,
+		onSuccess:   c.OnSuccess,
+		onFailure:   c.OnFailure,
 		traversalId: uint32(rand.Int31()),
+		info:        &TraversalInfo{Peer: serverPeer},
 		serverReady: make(chan bool, 10), // make this buffered to prevent deadlocks
 	}
 	c.addWorker(w)
@@ -147,9 +192,12 @@ func (c *Client) removeWorker(w *clientWorker) {
 type clientWorker struct {
 	wc          *waddellConn
 	peerId      waddell.PeerId
-	onFiveTuple FiveTupleCallbackClient
+	onSuccess   SuccessCallbackClient
+	onFailure   FailureCallbackClient
 	traversalId uint32
 	traversal   *natty.Traversal
+	info        *TraversalInfo
+	startedAt   time.Time
 	serverReady chan bool
 }
 
@@ -159,9 +207,14 @@ func (w *clientWorker) run() {
 
 	go w.sendMessages()
 
+	w.startedAt = time.Now()
 	ft, err := w.traversal.FiveTupleTimeout(Timeout)
 	if err != nil {
 		log.Errorf("Traversal to %s failed: %s", w.peerId, err)
+		if w.onFailure != nil {
+			w.info.Duration = time.Now().Sub(w.startedAt)
+			w.onFailure(w.info)
+		}
 		return
 	}
 	if <-w.serverReady {
@@ -170,7 +223,10 @@ func (w *clientWorker) run() {
 			log.Errorf("Unable to get UDP addresses for FiveTuple: %s", err)
 			return
 		}
-		w.onFiveTuple(local, remote)
+		w.info.LocalAddr = local
+		w.info.RemoteAddr = remote
+		w.info.Duration = time.Now().Sub(w.startedAt)
+		w.onSuccess(w.info)
 	}
 }
 
@@ -186,6 +242,13 @@ func (w *clientWorker) sendMessages() {
 
 func (w *clientWorker) messageReceived(msg message) {
 	msgString := string(msg.getData())
+
+	// Update info
+	w.info.ServerRespondedToSignaling = true
+	if natty.IsFiveTuple(msgString) {
+		w.info.ServerGotFiveTuple = true
+	}
+
 	if msgString == ServerReady {
 		// Server's ready!
 		w.serverReady <- true

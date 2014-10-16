@@ -9,13 +9,23 @@ import (
 	"github.com/getlantern/waddell"
 )
 
+// SuccessCallbackServer is a function that gets invoked when a server NAT
+// traversal results in a UDP five tuple. The function allows the consumer of
+// nattywad to bind to the resulting local and remote addresses and start
+// whatever processing it needs to. SuccessCallbackServer should return true to
+// indicate that the server is bound and ready, which will cause nattywad to
+// emit a ServerReady message. Only once this has happened will the client on
+// the other side of the NAT traversal actually get a five tuple through its
+// own callback.
+type SuccessCallbackServer func(local *net.UDPAddr, remote *net.UDPAddr) bool
+
 // Server is a server that answers NAT traversal requests received via waddell.
 // When a NAT traversal results in a 5-tuple, the OnFiveTuple callback is
 // called.
 type Server struct {
-	// OnFiveTuple: a callback that's invoked once a five tuple has been
+	// OnSuccess: a callback that's invoked once a five tuple has been
 	// obtained. Must be specified in order for Server to work.
-	OnFiveTuple FiveTupleCallbackServer
+	OnSuccess SuccessCallbackServer
 
 	waddellAddr string
 	worker      *serverWorker
@@ -49,7 +59,7 @@ func (server *Server) Configure(waddellAddr string) {
 			if err != nil {
 				log.Errorf("Unable to connect to waddell: %s", err)
 			} else {
-				server.worker = startServerWorker(wc, server.OnFiveTuple)
+				server.worker = startServerWorker(wc, server.OnSuccess)
 			}
 		}
 	}
@@ -59,19 +69,19 @@ func (server *Server) Configure(waddellAddr string) {
 // connection. Every new waddell connection gets its own serverWorker in order
 // to make sure that we don't mix traversals between server connections.
 type serverWorker struct {
-	wc          *waddellConn
-	onFiveTuple FiveTupleCallbackServer
-	stopCh      chan bool
-	peers       map[waddell.PeerId]*peer
-	peersMutex  sync.Mutex
+	wc         *waddellConn
+	onSuccess  SuccessCallbackServer
+	stopCh     chan bool
+	peers      map[waddell.PeerId]*peer
+	peersMutex sync.Mutex
 }
 
-func startServerWorker(wc *waddellConn, onFiveTuple FiveTupleCallbackServer) *serverWorker {
+func startServerWorker(wc *waddellConn, onSuccess SuccessCallbackServer) *serverWorker {
 	worker := &serverWorker{
-		wc:          wc,
-		onFiveTuple: onFiveTuple,
-		stopCh:      make(chan bool),
-		peers:       make(map[waddell.PeerId]*peer),
+		wc:        wc,
+		onSuccess: onSuccess,
+		stopCh:    make(chan bool),
+		peers:     make(map[waddell.PeerId]*peer),
 	}
 	go worker.receiveMessages()
 	return worker
@@ -108,10 +118,10 @@ func (w *serverWorker) processMessage(msg message, from waddell.PeerId) {
 	p := w.peers[from]
 	if p == nil {
 		p = &peer{
-			id:          from,
-			wc:          w.wc,
-			traversals:  make(map[uint32]*natty.Traversal),
-			onFiveTuple: w.onFiveTuple,
+			id:         from,
+			wc:         w.wc,
+			traversals: make(map[uint32]*natty.Traversal),
+			onSuccess:  w.onSuccess,
 		}
 		w.peers[from] = p
 	}
@@ -121,7 +131,7 @@ func (w *serverWorker) processMessage(msg message, from waddell.PeerId) {
 type peer struct {
 	id              waddell.PeerId
 	wc              *waddellConn
-	onFiveTuple     FiveTupleCallbackServer
+	onSuccess       SuccessCallbackServer
 	traversals      map[uint32]*natty.Traversal
 	traversalsMutex sync.Mutex
 }
@@ -166,7 +176,7 @@ func (p *peer) answer(msg message) {
 				return
 			}
 
-			if p.onFiveTuple(local, remote) {
+			if p.onSuccess(local, remote) {
 				// Server is ready, notify client
 				p.wc.send(p.id, traversalId, ServerReady)
 			}
