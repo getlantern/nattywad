@@ -143,7 +143,7 @@ func (p *peer) answer(msg message) {
 	t := p.traversals[traversalId]
 	if t == nil {
 		// Set up a new Natty traversal
-		t = natty.Answer(nil)
+		t = natty.Answer(log.TraceOut())
 		go func() {
 			// Send
 			for {
