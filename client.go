@@ -78,6 +78,11 @@ type Client struct {
 	// (e.g. times out). If unpopulated, failures aren't reported.
 	OnFailure FailureCallbackClient
 
+	// KeepAliveInterval: If specified to a non-zero value, nattywad will send a
+	// keepalive message over the waddell channel to keep open the underlying
+	// connections.
+	KeepAliveInterval time.Duration
+
 	serverPeers  map[string]*ServerPeer
 	workers      map[uint32]*clientWorker
 	workersMutex sync.RWMutex
@@ -135,6 +140,18 @@ func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
 		if err != nil {
 			log.Errorf("Unable to connect to waddell: %s", err)
 			return
+		}
+		if c.KeepAliveInterval > 0 {
+			// Periodically send a KeepAlive message
+			go func() {
+				for {
+					time.Sleep(c.KeepAliveInterval)
+					err := wc.client.SendKeepAlive()
+					if err != nil {
+						log.Errorf("Unable to send KeepAlive packet to waddell: %s", err)
+					}
+				}
+			}()
 		}
 		c.waddellConns[serverPeer.WaddellAddr] = wc
 		go c.receiveMessages(wc)
