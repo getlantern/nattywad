@@ -149,6 +149,7 @@ func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
 					err := wc.client.SendKeepAlive()
 					if err != nil {
 						log.Errorf("Unable to send KeepAlive packet to waddell: %s", err)
+						return
 					}
 				}
 			}()
