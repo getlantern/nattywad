@@ -115,6 +115,7 @@ func (c *Client) Configure(serverPeers []*ServerPeer) {
 		if priorServerPeers[cid] == nil {
 			// Either we have a new server, or the address changed, try to
 			// traverse
+			log.Debugf("Attempting traversal to %s", peer.ID)
 			peerId, err := waddell.PeerIdFromString(peer.ID)
 			if err != nil {
 				log.Errorf("Unable to parse PeerID for server peer %s: %s",
@@ -122,6 +123,8 @@ func (c *Client) Configure(serverPeers []*ServerPeer) {
 				continue
 			}
 			c.offer(peer, peerId)
+		} else {
+			log.Debugf("Already know about %s, not attempting traversal", peer.ID)
 		}
 
 		// Keep track of new peer
