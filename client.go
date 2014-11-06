@@ -223,7 +223,7 @@ type clientWorker struct {
 }
 
 func (w *clientWorker) run() {
-	w.traversal = natty.Offer(log.TraceOut())
+	w.traversal = natty.Offer()
 	defer w.traversal.Close()
 
 	go w.sendMessages()
