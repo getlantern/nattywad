@@ -153,9 +153,9 @@ func idToBytes(id uint32) []byte {
 	return b
 }
 
-// DEFAULT_WADDELL_CERT is the certificate for the production waddell server(s)
+// DefaultWaddellCert is the certificate for the production waddell server(s)
 // used by, amongst other things, flashlight.
-const DEFAULT_WADDELL_CERT = `-----BEGIN CERTIFICATE-----
+const DefaultWaddellCert = `-----BEGIN CERTIFICATE-----
 MIIDkTCCAnmgAwIBAgIJAJKSxfu1psP7MA0GCSqGSIb3DQEBBQUAMF8xCzAJBgNV
 BAYTAlVTMRMwEQYDVQQIDApTb21lLVN0YXRlMSkwJwYDVQQKDCBCcmF2ZSBOZXcg
 U29mdHdhcmUgUHJvamVjdCwgSW5jLjEQMA4GA1UEAwwHd2FkZGVsbDAeFw0xNDEx
