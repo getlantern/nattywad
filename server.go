@@ -1,6 +1,7 @@
 package nattywad
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -19,6 +20,10 @@ import (
 // own callback.
 type SuccessCallbackServer func(local *net.UDPAddr, remote *net.UDPAddr) bool
 
+// FailureCallbackServer is a function that gets invoked when a server NAT
+// traversal fails for any reason.
+type FailureCallbackServer func(err error)
+
 // Server is a server that answers NAT traversal requests received via waddell.
 // When a NAT traversal results in a 5-tuple, the OnFiveTuple callback is
 // called.
@@ -26,6 +31,13 @@ type Server struct {
 	// OnSuccess: a callback that's invoked once a five tuple has been
 	// obtained. Must be specified in order for Server to work.
 	OnSuccess SuccessCallbackServer
+
+	// OnFailure: a callback that's invoked when a NAT traversal fails.
+	OnFailure FailureCallbackServer
+
+	// OnConnect: a callback that's invoked whenever a connection is made to
+	//waddell
+	OnConnect ConnectCallback
 
 	waddellAddr string
 	serverCert  string
@@ -65,7 +77,10 @@ func (server *Server) Configure(waddellAddr string, serverCert string) {
 			if err != nil {
 				log.Errorf("Unable to connect to waddell: %s", err)
 			} else {
-				server.worker = startServerWorker(wc, server.OnSuccess)
+				if server.OnConnect != nil {
+					server.OnConnect(wc.client.ID())
+				}
+				server.worker = startServerWorker(wc, server.OnSuccess, server.OnFailure)
 			}
 		}
 	}
@@ -77,15 +92,17 @@ func (server *Server) Configure(waddellAddr string, serverCert string) {
 type serverWorker struct {
 	wc         *waddellConn
 	onSuccess  SuccessCallbackServer
+	onFailure  FailureCallbackServer
 	stopCh     chan bool
 	peers      map[waddell.PeerId]*peer
 	peersMutex sync.Mutex
 }
 
-func startServerWorker(wc *waddellConn, onSuccess SuccessCallbackServer) *serverWorker {
+func startServerWorker(wc *waddellConn, onSuccess SuccessCallbackServer, onFailure FailureCallbackServer) *serverWorker {
 	worker := &serverWorker{
 		wc:        wc,
 		onSuccess: onSuccess,
+		onFailure: onFailure,
 		stopCh:    make(chan bool),
 		peers:     make(map[waddell.PeerId]*peer),
 	}
@@ -128,6 +145,7 @@ func (w *serverWorker) processMessage(msg message, from waddell.PeerId) {
 			wc:         w.wc,
 			traversals: make(map[uint32]*natty.Traversal),
 			onSuccess:  w.onSuccess,
+			onFailure:  w.onFailure,
 		}
 		w.peers[from] = p
 	}
@@ -138,6 +156,7 @@ type peer struct {
 	id              waddell.PeerId
 	wc              *waddellConn
 	onSuccess       SuccessCallbackServer
+	onFailure       FailureCallbackServer
 	traversals      map[uint32]*natty.Traversal
 	traversalsMutex sync.Mutex
 }
@@ -172,13 +191,13 @@ func (p *peer) answer(msg message) {
 
 			ft, err := t.FiveTupleTimeout(Timeout)
 			if err != nil {
-				log.Debugf("Unable to answer traversal %d: %s", traversalId, err)
+				p.fail("Unable to answer traversal %d: %s", traversalId, err)
 				return
 			}
 
 			local, remote, err := ft.UDPAddrs()
 			if err != nil {
-				log.Errorf("Unable to get UDP addresses for FiveTuple: %s", err)
+				p.fail("Unable to get UDP addresses for FiveTuple: %s", err)
 				return
 			}
 
@@ -190,4 +209,12 @@ func (p *peer) answer(msg message) {
 		p.traversals[traversalId] = t
 	}
 	t.MsgIn(string(msg.getData()))
+}
+
+func (p *peer) fail(message string, args ...interface{}) {
+	err := fmt.Errorf(message, args...)
+	log.Debug(err)
+	if p.onFailure != nil {
+		p.onFailure(err)
+	}
 }
