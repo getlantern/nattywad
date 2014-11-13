@@ -28,6 +28,7 @@ type Server struct {
 	OnSuccess SuccessCallbackServer
 
 	waddellAddr string
+	serverCert  string
 	worker      *serverWorker
 	cfgMutex    sync.Mutex
 }
@@ -41,21 +42,26 @@ type Server struct {
 //
 //   Connected to Waddell!! Id is: 4fb42b23-78d3-4185-b1d7-46b7d4eb9167
 //
-func (server *Server) Configure(waddellAddr string) {
+// serverCert allows specifying a PEM-encoded certificate with which to
+// authenticate the server. If specified, connections to waddell server will be
+// encrypted with TLS.
+//
+func (server *Server) Configure(waddellAddr string, serverCert string) {
 	server.cfgMutex.Lock()
 	defer server.cfgMutex.Unlock()
 
-	if waddellAddr != server.waddellAddr {
+	if waddellAddr != server.waddellAddr || serverCert != server.serverCert {
 		log.Debugf("Waddell address changed")
 		if server.worker != nil {
 			server.worker.stop()
 		}
 
 		server.waddellAddr = waddellAddr
+		server.serverCert = serverCert
 		if server.waddellAddr != "" {
 			wc, err := newWaddellConn(func() (net.Conn, error) {
 				return net.DialTimeout("tcp", waddellAddr, 20*time.Second)
-			})
+			}, serverCert)
 			if err != nil {
 				log.Errorf("Unable to connect to waddell: %s", err)
 			} else {

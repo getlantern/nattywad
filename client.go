@@ -70,6 +70,11 @@ type Client struct {
 	// address. Must be specified in order for Client to work.
 	DialWaddell func(addr string) (net.Conn, error)
 
+	// ServerCert: PEM-encoded certificate by which to authenticate the waddell
+	// server. If provided, connection to waddell is encrypted with TLS. If not,
+	// connection will be made plain-text.
+	ServerCert string
+
 	// OnSuccess: a callback that's invoked once a five tuple has been
 	// obtained. Must be specified in order for Client to work.
 	OnSuccess SuccessCallbackClient
@@ -139,7 +144,7 @@ func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
 		var err error
 		wc, err = newWaddellConn(func() (net.Conn, error) {
 			return c.DialWaddell(serverPeer.WaddellAddr)
-		})
+		}, c.ServerCert)
 		if err != nil {
 			log.Errorf("Unable to connect to waddell: %s", err)
 			return

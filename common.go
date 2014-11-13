@@ -44,18 +44,21 @@ func (msg message) getData() []byte {
 // the low bandwidth and weak latency requirements of signaling traffic, this is
 // unlikely to be a problem.
 type waddellConn struct {
-	dial      func() (net.Conn, error)
-	client    *waddell.Client
-	conn      net.Conn
-	connMutex sync.RWMutex
-	dialErr   error
+	dial       func() (net.Conn, error)
+	serverCert string
+	client     *waddell.Client
+	conn       net.Conn
+	connMutex  sync.RWMutex
+	dialErr    error
 }
 
 // newWaddellConn establishes a new waddellConn that uses the provided dial
-// function to connect to waddell when it needs to.
-func newWaddellConn(dial func() (net.Conn, error)) (wc *waddellConn, err error) {
+// function to connect to waddell when it needs to. serverCert specifies a PEM-
+// encoded certificate with which to authenticate the waddell server.
+func newWaddellConn(dial func() (net.Conn, error), serverCert string) (wc *waddellConn, err error) {
 	wc = &waddellConn{
-		dial: dial,
+		dial:       dial,
+		serverCert: serverCert,
 	}
 	err = wc.connect()
 	return
@@ -123,7 +126,11 @@ func (wc *waddellConn) connect() (err error) {
 	if err != nil {
 		return
 	}
-	wc.client, err = waddell.Connect(wc.conn)
+	if wc.serverCert != "" {
+		wc.client, err = waddell.ConnectTLS(wc.conn, wc.serverCert)
+	} else {
+		wc.client, err = waddell.Connect(wc.conn)
+	}
 	if err == nil {
 		log.Debugf("Connected to Waddell!! Id is: %s", wc.client.ID())
 	} else {
