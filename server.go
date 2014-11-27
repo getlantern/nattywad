@@ -53,10 +53,6 @@ func (s *Server) Stop() {
 }
 
 func (s *Server) receiveMessages() {
-	defer func() {
-		s.Client.Close()
-	}()
-
 	in := s.Client.In(NattywadTopic)
 	for {
 		select {
