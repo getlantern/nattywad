@@ -37,11 +37,16 @@ func TestRoundTrip(t *testing.T) {
 	}
 	go server.Configure(waddellAddr, DefaultWaddellCert)
 
-	client := &Client{
-		DialWaddell: func(addr string) (net.Conn, error) {
+	clientMgr := &waddell.ClientMgr{
+		Dial: func(addr string) (net.Conn, error) {
 			return net.Dial("tcp", addr)
 		},
-		ServerCert: DefaultWaddellCert,
+		ServerCert:        DefaultWaddellCert,
+		ReconnectAttempts: 10,
+	}
+
+	client := &Client{
+		ClientMgr: clientMgr,
 		OnSuccess: func(info *TraversalInfo) {
 			log.Debugf("Client - Success! %s", spew.Sdump(info))
 			wg.Done()

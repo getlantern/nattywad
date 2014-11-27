@@ -83,6 +83,41 @@ func (server *Server) Configure(waddellAddr string, serverCert string) {
 	}
 }
 
+// ConnectCallback is a function that gets invoked whenever a connection has
+// been established to waddell.
+type ConnectCallback func(id waddell.PeerId)
+
+func connectToWaddell(dial waddell.DialFunc, cb ConnectCallback) (*waddell.Client, error) {
+	secureDial, err := waddell.Secured(dial, DefaultWaddellCert)
+	if err != nil {
+		return nil, err
+	}
+	client := &waddell.Client{
+		Dial:              secureDial,
+		ReconnectAttempts: 1000000,
+	}
+	id, err := client.Connect()
+	if err != nil {
+		return nil, err
+	}
+	logPeerId(id, cb)
+	go readPeerIds(client, cb)
+	return client, nil
+}
+
+func readPeerIds(client *waddell.Client, cb ConnectCallback) {
+	for id := range client.UpdatedIdsCh {
+		logPeerId(id, cb)
+	}
+}
+
+func logPeerId(id waddell.PeerId, cb ConnectCallback) {
+	log.Debugf("Connected to Waddell!! Id is: %s", id)
+	if cb != nil {
+		cb(id)
+	}
+}
+
 // serverWorker encapsulates the work that's done to accept offers on a waddell
 // connection. Every new waddell connection gets its own serverWorker in order
 // to make sure that we don't mix traversals between server connections.

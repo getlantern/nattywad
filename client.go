@@ -66,14 +66,8 @@ type TraversalInfo struct {
 // servers. When a NAT traversal results in a 5-tuple, the OnFiveTuple callback
 // is called.
 type Client struct {
-	// DialWaddell: a function that dials the waddell server at the given
-	// address. Must be specified in order for Client to work.
-	DialWaddell func(addr string) (net.Conn, error)
-
-	// ServerCert: PEM-encoded certificate by which to authenticate the waddell
-	// server. If provided, connection to waddell is encrypted with TLS. If not,
-	// connection will be made plain-text.
-	ServerCert string
+	// ClientMgr the ClientMgr to use to obtain Waddell connections
+	ClientMgr *waddell.ClientMgr
 
 	// OnSuccess: a callback that's invoked once a five tuple has been
 	// obtained. Must be specified in order for Client to work.
@@ -142,9 +136,7 @@ func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
 	if wc == nil {
 		/* new waddell server--open connection to it */
 		var err error
-		wc, err = connectToWaddell(func() (net.Conn, error) {
-			return c.DialWaddell(serverPeer.WaddellAddr)
-		}, nil)
+		wc, _, err = c.ClientMgr.ClientTo(serverPeer.WaddellAddr)
 		if err != nil {
 			log.Errorf("Unable to connect to waddell: %s", err)
 			return
