@@ -38,18 +38,19 @@ type Server struct {
 	// OnFailure: a callback that's invoked when a NAT traversal fails.
 	OnFailure FailureCallbackServer
 
-	stopCh     chan bool
+	stopCh     chan interface{}
 	peers      map[waddell.PeerId]*peer
 	peersMutex sync.Mutex
 }
 
 func (s *Server) Start() {
+	s.stopCh = make(chan interface{}, 1)
 	s.peers = make(map[waddell.PeerId]*peer)
 	go s.receiveMessages()
 }
 
 func (s *Server) Stop() {
-	s.stopCh <- true
+	s.stopCh <- nil
 }
 
 func (s *Server) receiveMessages() {
@@ -62,7 +63,7 @@ func (s *Server) receiveMessages() {
 			wm, ok := <-in
 			if !ok {
 				log.Errorf("Done receiving messages from waddell")
-				return
+				s.stopCh <- nil
 			}
 			s.processMessage(message(wm.Body), wm.From)
 		}
