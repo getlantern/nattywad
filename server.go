@@ -71,15 +71,12 @@ func (server *Server) Configure(waddellAddr string, serverCert string) {
 		server.waddellAddr = waddellAddr
 		server.serverCert = serverCert
 		if server.waddellAddr != "" {
-			wc, err := newWaddellConn(func() (net.Conn, error) {
+			wc, err := connectToWaddell(func() (net.Conn, error) {
 				return net.DialTimeout("tcp", waddellAddr, 20*time.Second)
-			}, serverCert)
+			}, server.OnConnect)
 			if err != nil {
 				log.Errorf("Unable to connect to waddell: %s", err)
 			} else {
-				if server.OnConnect != nil {
-					server.OnConnect(wc.client.ID())
-				}
 				server.worker = startServerWorker(wc, server.OnSuccess, server.OnFailure)
 			}
 		}
@@ -90,7 +87,7 @@ func (server *Server) Configure(waddellAddr string, serverCert string) {
 // connection. Every new waddell connection gets its own serverWorker in order
 // to make sure that we don't mix traversals between server connections.
 type serverWorker struct {
-	wc         *waddellConn
+	wc         *waddell.Client
 	onSuccess  SuccessCallbackServer
 	onFailure  FailureCallbackServer
 	stopCh     chan bool
@@ -98,7 +95,7 @@ type serverWorker struct {
 	peersMutex sync.Mutex
 }
 
-func startServerWorker(wc *waddellConn, onSuccess SuccessCallbackServer, onFailure FailureCallbackServer) *serverWorker {
+func startServerWorker(wc *waddell.Client, onSuccess SuccessCallbackServer, onFailure FailureCallbackServer) *serverWorker {
 	worker := &serverWorker{
 		wc:        wc,
 		onSuccess: onSuccess,
@@ -116,20 +113,21 @@ func (w *serverWorker) stop() {
 
 func (w *serverWorker) receiveMessages() {
 	defer func() {
-		w.wc.close()
+		w.wc.Close()
 	}()
 
+	in := w.wc.In(NattywadTopic)
 	for {
 		select {
 		case <-w.stopCh:
 			return
 		default:
-			msg, from, err := w.wc.receive()
-			if err != nil {
-				log.Errorf("Error receiving next message from waddell: %s", err)
-				continue
+			wm, ok := <-in
+			if !ok {
+				log.Errorf("Done receiving messages from waddell")
+				return
 			}
-			w.processMessage(msg, from)
+			w.processMessage(message(wm.Body), wm.From)
 		}
 	}
 }
@@ -143,7 +141,7 @@ func (w *serverWorker) processMessage(msg message, from waddell.PeerId) {
 		p = &peer{
 			id:         from,
 			wc:         w.wc,
-			traversals: make(map[uint32]*natty.Traversal),
+			traversals: make(map[traversalId]*natty.Traversal),
 			onSuccess:  w.onSuccess,
 			onFailure:  w.onFailure,
 		}
@@ -154,10 +152,10 @@ func (w *serverWorker) processMessage(msg message, from waddell.PeerId) {
 
 type peer struct {
 	id              waddell.PeerId
-	wc              *waddellConn
+	wc              *waddell.Client
 	onSuccess       SuccessCallbackServer
 	onFailure       FailureCallbackServer
-	traversals      map[uint32]*natty.Traversal
+	traversals      map[traversalId]*natty.Traversal
 	traversalsMutex sync.Mutex
 }
 
@@ -169,6 +167,7 @@ func (p *peer) answer(msg message) {
 	if t == nil {
 		// Set up a new Natty traversal
 		t = natty.Answer()
+		out := p.wc.Out(NattywadTopic)
 		go func() {
 			// Send
 			for {
@@ -176,7 +175,7 @@ func (p *peer) answer(msg message) {
 				if done {
 					return
 				}
-				p.wc.send(p.id, traversalId, msgOut)
+				out <- waddell.NewMessageOut(p.id, traversalId.toBytes(), []byte(msgOut))
 			}
 		}()
 
@@ -203,7 +202,7 @@ func (p *peer) answer(msg message) {
 
 			if p.onSuccess(local, remote) {
 				// Server is ready, notify client
-				p.wc.send(p.id, traversalId, ServerReady)
+				out <- waddell.NewMessageOut(p.id, traversalId.toBytes(), []byte(ServerReady))
 			}
 		}()
 		p.traversals[traversalId] = t

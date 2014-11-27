@@ -89,9 +89,9 @@ type Client struct {
 	KeepAliveInterval time.Duration
 
 	serverPeers  map[string]*ServerPeer
-	workers      map[uint32]*clientWorker
+	workers      map[traversalId]*clientWorker
 	workersMutex sync.RWMutex
-	waddellConns map[string]*waddellConn
+	waddells     map[string]*waddell.Client
 	cfgMutex     sync.Mutex
 }
 
@@ -107,8 +107,8 @@ func (c *Client) Configure(serverPeers []*ServerPeer) {
 	// Lazily initialize data structures
 	if c.serverPeers == nil {
 		c.serverPeers = make(map[string]*ServerPeer)
-		c.waddellConns = make(map[string]*waddellConn)
-		c.workers = make(map[uint32]*clientWorker)
+		c.waddells = make(map[string]*waddell.Client)
+		c.workers = make(map[traversalId]*clientWorker)
 	}
 
 	priorServerPeers := c.serverPeers
@@ -138,13 +138,13 @@ func (c *Client) Configure(serverPeers []*ServerPeer) {
 }
 
 func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
-	wc := c.waddellConns[serverPeer.WaddellAddr]
+	wc := c.waddells[serverPeer.WaddellAddr]
 	if wc == nil {
 		/* new waddell server--open connection to it */
 		var err error
-		wc, err = newWaddellConn(func() (net.Conn, error) {
+		wc, err = connectToWaddell(func() (net.Conn, error) {
 			return c.DialWaddell(serverPeer.WaddellAddr)
-		}, c.ServerCert)
+		}, nil)
 		if err != nil {
 			log.Errorf("Unable to connect to waddell: %s", err)
 			return
@@ -154,7 +154,7 @@ func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
 			go func() {
 				for {
 					time.Sleep(c.KeepAliveInterval)
-					err := wc.client.SendKeepAlive()
+					err := wc.SendKeepAlive()
 					if err != nil {
 						log.Errorf("Unable to send KeepAlive packet to waddell: %s", err)
 						return
@@ -162,16 +162,16 @@ func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
 				}
 			}()
 		}
-		c.waddellConns[serverPeer.WaddellAddr] = wc
-		go c.receiveMessages(wc)
+		c.waddells[serverPeer.WaddellAddr] = wc
+		go c.receiveMessages(wc.In(NattywadTopic))
 	}
 
 	w := &clientWorker{
-		wc:          wc,
+		out:         wc.Out(NattywadTopic),
 		peerId:      peerId,
 		onSuccess:   c.OnSuccess,
 		onFailure:   c.OnFailure,
-		traversalId: uint32(rand.Int31()),
+		tid:         traversalId(rand.Int31()),
 		info:        &TraversalInfo{Peer: serverPeer},
 		serverReady: make(chan bool, 10), // make this buffered to prevent deadlocks
 	}
@@ -179,13 +179,10 @@ func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
 	go w.run()
 }
 
-func (c *Client) receiveMessages(wc *waddellConn) {
-	for {
-		msg, _, err := wc.receive()
-		if err != nil {
-			log.Errorf("Unable to receive next message from waddell: %s", err)
-			return
-		}
+func (c *Client) receiveMessages(in <-chan *waddell.MessageIn) {
+	for wm := range in {
+		msg := message(wm.Body)
+		log.Tracef("Received %s from %s", msg.getData(), wm.From)
 		w := c.getWorker(msg.getTraversalId())
 		if w == nil {
 			log.Debugf("Got message for unknown traversal %d, skipping", msg.getTraversalId())
@@ -198,29 +195,29 @@ func (c *Client) receiveMessages(wc *waddellConn) {
 func (c *Client) addWorker(w *clientWorker) {
 	c.workersMutex.Lock()
 	defer c.workersMutex.Unlock()
-	c.workers[w.traversalId] = w
+	c.workers[w.tid] = w
 }
 
-func (c *Client) getWorker(traversalId uint32) *clientWorker {
+func (c *Client) getWorker(tid traversalId) *clientWorker {
 	c.workersMutex.RLock()
 	defer c.workersMutex.RUnlock()
-	return c.workers[traversalId]
+	return c.workers[tid]
 }
 
 func (c *Client) removeWorker(w *clientWorker) {
 	c.workersMutex.Lock()
 	defer c.workersMutex.Unlock()
-	delete(c.workers, w.traversalId)
+	delete(c.workers, w.tid)
 }
 
 // clientWorker encapsulates the work done by the client for a single NAT
 // traversal.
 type clientWorker struct {
-	wc          *waddellConn
+	out         chan<- *waddell.MessageOut
 	peerId      waddell.PeerId
 	onSuccess   SuccessCallbackClient
 	onFailure   FailureCallbackClient
-	traversalId uint32
+	tid         traversalId
 	traversal   *natty.Traversal
 	info        *TraversalInfo
 	startedAt   time.Time
@@ -262,7 +259,7 @@ func (w *clientWorker) sendMessages() {
 		if done {
 			return
 		}
-		w.wc.send(w.peerId, w.traversalId, msgOut)
+		w.out <- waddell.NewMessageOut(w.peerId, w.tid.toBytes(), []byte(msgOut))
 	}
 }
 
