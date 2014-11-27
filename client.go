@@ -41,7 +41,9 @@ type FailureCallbackClient func(info *TraversalInfo)
 
 // TraversalInfo provides information about failed traversals
 type TraversalInfo struct {
+	// Peer: the ServerPeer with which we attempted traversal.
 	Peer *ServerPeer
+
 	// ServerRespondedToSignaling: indicates whether nattywad received any
 	// signaling messages from the server peer during the traversal.
 	ServerRespondedToSignaling bool
