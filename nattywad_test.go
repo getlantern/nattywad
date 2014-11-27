@@ -22,6 +22,15 @@ func TestRoundTrip(t *testing.T) {
 	serverIdCh := make(chan waddell.PeerId)
 
 	server := &Server{
+		Client: &waddell.Client{
+			Dial: func() (net.Conn, error) {
+				return net.Dial("tcp", waddellAddr)
+			},
+			ServerCert: DefaultWaddellCert,
+			OnId: func(id waddell.PeerId) {
+				serverIdCh <- id
+			},
+		},
 		OnSuccess: func(local *net.UDPAddr, remote *net.UDPAddr) bool {
 			log.Debugf("Success! %s -> %s", local, remote)
 			wg.Done()
@@ -31,11 +40,12 @@ func TestRoundTrip(t *testing.T) {
 			t.Errorf("Server - Traversal failed: %s", err)
 			wg.Done()
 		},
-		OnConnect: func(id waddell.PeerId) {
-			serverIdCh <- id
-		},
 	}
-	go server.Configure(waddellAddr, DefaultWaddellCert)
+	_, err := server.Client.Connect()
+	if err != nil {
+		t.Fatalf("Unable to connect client: %s", err)
+	}
+	server.Start()
 
 	clientMgr := &waddell.ClientMgr{
 		Dial: func(addr string) (net.Conn, error) {
