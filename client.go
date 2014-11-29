@@ -253,7 +253,7 @@ func (w *clientWorker) sendMessages() {
 		if done {
 			return
 		}
-		w.out <- waddell.NewMessageOut(w.peerId, w.tid.toBytes(), []byte(msgOut))
+		w.out <- waddell.Message(w.peerId, w.tid.toBytes(), []byte(msgOut))
 	}
 }
 

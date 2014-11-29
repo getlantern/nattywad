@@ -113,7 +113,7 @@ func (p *peer) answer(msg message) {
 				if done {
 					return
 				}
-				out <- waddell.NewMessageOut(p.id, traversalId.toBytes(), []byte(msgOut))
+				out <- waddell.Message(p.id, traversalId.toBytes(), []byte(msgOut))
 			}
 		}()
 
@@ -140,7 +140,7 @@ func (p *peer) answer(msg message) {
 
 			if p.onSuccess(local, remote) {
 				// Server is ready, notify client
-				out <- waddell.NewMessageOut(p.id, traversalId.toBytes(), []byte(ServerReady))
+				out <- waddell.Message(p.id, traversalId.toBytes(), []byte(ServerReady))
 			}
 		}()
 		p.traversals[traversalId] = t
