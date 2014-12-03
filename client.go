@@ -138,7 +138,7 @@ func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
 	if wc == nil {
 		/* new waddell server--open connection to it */
 		var err error
-		wc, _, err = c.ClientMgr.ClientTo(serverPeer.WaddellAddr)
+		wc, err = c.ClientMgr.ClientTo(serverPeer.WaddellAddr)
 		if err != nil {
 			log.Errorf("Unable to connect to waddell: %s", err)
 			return
