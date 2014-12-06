@@ -104,7 +104,7 @@ func (p *peer) answer(msg message) {
 	t := p.traversals[traversalId]
 	if t == nil {
 		// Set up a new Natty traversal
-		t = natty.Answer()
+		t = natty.Answer(Timeout)
 		out := p.wc.Out(NattywadTopic)
 		go func() {
 			// Send
@@ -126,7 +126,7 @@ func (p *peer) answer(msg message) {
 				t.Close()
 			}()
 
-			ft, err := t.FiveTupleTimeout(Timeout)
+			ft, err := t.FiveTuple()
 			if err != nil {
 				p.fail("Unable to answer traversal %d: %s", traversalId, err)
 				return
