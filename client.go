@@ -220,7 +220,12 @@ type clientWorker struct {
 
 func (w *clientWorker) run() {
 	w.traversal = natty.Offer(Timeout)
-	defer w.traversal.Close()
+	defer func() {
+		err := w.traversal.Close()
+		if err != nil {
+			log.Debugf("Unable to close traversal: %s", err)
+		}
+	}()
 
 	go w.sendMessages()
 

@@ -123,7 +123,10 @@ func (p *peer) answer(msg message) {
 				p.traversalsMutex.Lock()
 				defer p.traversalsMutex.Unlock()
 				delete(p.traversals, traversalId)
-				t.Close()
+				err := t.Close()
+				if err != nil {
+					log.Debugf("Unable to close traversal: %s", err)
+				}
 			}()
 
 			ft, err := t.FiveTuple()
