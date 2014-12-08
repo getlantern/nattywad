@@ -75,7 +75,7 @@ type Client struct {
 	// obtained. Must be specified in order for Client to work.
 	OnSuccess SuccessCallbackClient
 
-	// OnFailure: a callback that's invoked if the NAT traversal fails
+	// OnFailure: a optional callback that's invoked if the NAT traversal fails
 	// (e.g. times out). If unpopulated, failures aren't reported.
 	OnFailure FailureCallbackClient
 

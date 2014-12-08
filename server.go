@@ -35,12 +35,12 @@ type Server struct {
 	// obtained. Must be specified in order for Server to work.
 	OnSuccess SuccessCallbackServer
 
-	// OnFailure: a callback that's invoked when a NAT traversal fails.
+	// OnFailure: a optional callback that's invoked when a NAT traversal fails.
+	// If unpopulated, failures aren't reported.
 	OnFailure FailureCallbackServer
 
-	stopCh     chan interface{}
-	peers      map[waddell.PeerId]*peer
-	peersMutex sync.Mutex
+	stopCh chan interface{}
+	peers  map[waddell.PeerId]*peer
 }
 
 func (s *Server) Start() {
@@ -71,9 +71,6 @@ func (s *Server) receiveMessages() {
 }
 
 func (s *Server) processMessage(msg message, from waddell.PeerId) {
-	s.peersMutex.Lock()
-	defer s.peersMutex.Unlock()
-
 	p := s.peers[from]
 	if p == nil {
 		p = &peer{
