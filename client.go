@@ -49,7 +49,7 @@ type TraversalInfo struct {
 	ServerRespondedToSignaling bool
 
 	// ServerGotFiveTuple: indicates whether or not the server peer got a
-	// FiveTuple of its own (only populated when using nattywad as a client)
+	// FiveTuple of its own.
 	ServerGotFiveTuple bool
 
 	// LocalAddr: on a successful traversal, this contains the local UDP addr of
