@@ -219,13 +219,18 @@ type clientWorker struct {
 }
 
 func (w *clientWorker) run() {
-	w.traversal = natty.Offer()
-	defer w.traversal.Close()
+	w.traversal = natty.Offer(Timeout)
+	defer func() {
+		err := w.traversal.Close()
+		if err != nil {
+			log.Debugf("Unable to close traversal: %s", err)
+		}
+	}()
 
 	go w.sendMessages()
 
 	w.startedAt = time.Now()
-	ft, err := w.traversal.FiveTupleTimeout(Timeout)
+	ft, err := w.traversal.FiveTuple()
 	if err != nil {
 		log.Errorf("Traversal to %s failed: %s", w.peerId, err)
 		if w.onFailure != nil {
