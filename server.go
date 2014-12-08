@@ -9,19 +9,19 @@ import (
 	"github.com/getlantern/waddell"
 )
 
-// SuccessCallbackServer is a function that gets invoked when a server NAT
+// ServerSuccessCallback is a function that gets invoked when a server NAT
 // traversal results in a UDP five tuple. The function allows the consumer of
 // nattywad to bind to the resulting local and remote addresses and start
-// whatever processing it needs to. SuccessCallbackServer should return true to
+// whatever processing it needs to. ServerSuccessCallback should return true to
 // indicate that the server is bound and ready, which will cause nattywad to
 // emit a ServerReady message. Only once this has happened will the client on
 // the other side of the NAT traversal actually get a five tuple through its
 // own callback.
-type SuccessCallbackServer func(local *net.UDPAddr, remote *net.UDPAddr) bool
+type ServerSuccessCallback func(local *net.UDPAddr, remote *net.UDPAddr) bool
 
-// FailureCallbackServer is a function that gets invoked when a server NAT
+// ServerFailureCallback is a function that gets invoked when a server NAT
 // traversal fails for any reason.
-type FailureCallbackServer func(err error)
+type ServerFailureCallback func(err error)
 
 // Server is a server that answers NAT traversal requests received via waddell.
 // When a NAT traversal results in a 5-tuple, the OnFiveTuple callback is
@@ -33,11 +33,11 @@ type Server struct {
 
 	// OnSuccess: a callback that's invoked once a five tuple has been
 	// obtained. Must be specified in order for Server to work.
-	OnSuccess SuccessCallbackServer
+	OnSuccess ServerSuccessCallback
 
 	// OnFailure: a optional callback that's invoked when a NAT traversal fails.
 	// If unpopulated, failures aren't reported.
-	OnFailure FailureCallbackServer
+	OnFailure ServerFailureCallback
 
 	stopCh chan interface{}
 	peers  map[waddell.PeerId]*peer
@@ -88,8 +88,8 @@ func (s *Server) processMessage(msg message, from waddell.PeerId) {
 type peer struct {
 	id              waddell.PeerId
 	wc              *waddell.Client
-	onSuccess       SuccessCallbackServer
-	onFailure       FailureCallbackServer
+	onSuccess       ServerSuccessCallback
+	onFailure       ServerFailureCallback
 	traversals      map[traversalId]*natty.Traversal
 	traversalsMutex sync.Mutex
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/getlantern/testify/assert"
 	"github.com/getlantern/waddell"
 )
 
@@ -74,4 +75,5 @@ func TestRoundTrip(t *testing.T) {
 	}})
 
 	wg.Wait()
+	assert.Empty(t, client.workers, "No workers should be left")
 }

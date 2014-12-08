@@ -31,15 +31,15 @@ func (p *ServerPeer) String() string {
 	return p.CompositeID()
 }
 
-// SuccessCallbackClient is a function that gets invoked when a client NAT
+// ClientSuccessCallback is a function that gets invoked when a client NAT
 // traversal results in a UDP five tuple.
-type SuccessCallbackClient func(info *TraversalInfo)
+type ClientSuccessCallback func(info *TraversalInfo)
 
-// FailureCallbackClient is a callback that is invoked if a client NAT traversal
+// ClientFailureCallback is a callback that is invoked if a client NAT traversal
 // fails.
-type FailureCallbackClient func(info *TraversalInfo)
+type ClientFailureCallback func(info *TraversalInfo)
 
-// TraversalInfo provides information about failed traversals
+// TraversalInfo provides information about traversals (successful and failed).
 type TraversalInfo struct {
 	// Peer: the ServerPeer with which we attempted traversal.
 	Peer *ServerPeer
@@ -73,11 +73,11 @@ type Client struct {
 
 	// OnSuccess: a callback that's invoked once a five tuple has been
 	// obtained. Must be specified in order for Client to work.
-	OnSuccess SuccessCallbackClient
+	OnSuccess ClientSuccessCallback
 
 	// OnFailure: a optional callback that's invoked if the NAT traversal fails
 	// (e.g. times out). If unpopulated, failures aren't reported.
-	OnFailure FailureCallbackClient
+	OnFailure ClientFailureCallback
 
 	// KeepAliveInterval: If specified to a non-zero value, nattywad will send a
 	// keepalive message over the waddell channel to keep open the underlying
@@ -170,7 +170,10 @@ func (c *Client) offer(serverPeer *ServerPeer, peerId waddell.PeerId) {
 		serverReady: make(chan bool, 10), // make this buffered to prevent deadlocks
 	}
 	c.addWorker(w)
-	go w.run()
+	go func() {
+		w.run()
+		c.removeWorker(w)
+	}()
 }
 
 func (c *Client) receiveMessages(in <-chan *waddell.MessageIn) {
@@ -209,8 +212,8 @@ func (c *Client) removeWorker(w *clientWorker) {
 type clientWorker struct {
 	out         chan<- *waddell.MessageOut
 	peerId      waddell.PeerId
-	onSuccess   SuccessCallbackClient
-	onFailure   FailureCallbackClient
+	onSuccess   ClientSuccessCallback
+	onFailure   ClientFailureCallback
 	tid         traversalId
 	traversal   *natty.Traversal
 	info        *TraversalInfo
