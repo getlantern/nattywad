@@ -10,13 +10,26 @@ import (
 	"github.com/getlantern/waddell"
 )
 
-const (
-	waddellAddr = "128.199.130.61:443"
-)
-
 // TestRoundTrip is an integration test that tests a round trip with client and
 // server, using a waddell server in the cloud.
 func TestRoundTrip(t *testing.T) {
+	// Start a waddell server
+	wserver := &waddell.Server{}
+	laddr := "localhost:0"
+	log.Debugf("Starting waddell at %s", laddr)
+	listener, err := net.Listen("tcp", laddr)
+	if err != nil {
+		t.Fatalf("Unable to listen at %s: %s", laddr, err)
+	}
+	waddr := listener.Addr().String()
+
+	go func() {
+		err = wserver.Serve(listener)
+		if err != nil {
+			t.Fatalf("Unable to start waddell at %s: %s", waddr, err)
+		}
+	}()
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -24,9 +37,8 @@ func TestRoundTrip(t *testing.T) {
 
 	wc, err := waddell.NewClient(&waddell.ClientConfig{
 		Dial: func() (net.Conn, error) {
-			return net.Dial("tcp", waddellAddr)
+			return net.Dial("tcp", waddr)
 		},
-		ServerCert: DefaultWaddellCert,
 		OnId: func(id waddell.PeerId) {
 			serverIdCh <- id
 		},
@@ -53,7 +65,6 @@ func TestRoundTrip(t *testing.T) {
 		Dial: func(addr string) (net.Conn, error) {
 			return net.Dial("tcp", addr)
 		},
-		ServerCert:        DefaultWaddellCert,
 		ReconnectAttempts: 10,
 	}
 
@@ -71,7 +82,7 @@ func TestRoundTrip(t *testing.T) {
 	serverId := <-serverIdCh
 	client.Configure([]*ServerPeer{&ServerPeer{
 		ID:          serverId.String(),
-		WaddellAddr: waddellAddr,
+		WaddellAddr: waddr,
 	}})
 
 	wg.Wait()
